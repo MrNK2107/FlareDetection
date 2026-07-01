@@ -1,0 +1,46 @@
+data:
+  raw_dir: "data/raw"
+  processed_dir: "data/processed"
+  windows_dir: "data/windows"
+  external_dir: "data/external"
+
+ingestion:
+  target_frequency_hz: 1.0
+  gap_threshold_s: 5
+  z_score_window_h: 6
+  window_length_s: 1200
+  window_stride_s: 10
+  forecast_horizon_s: 1800
+
+synthetic_data:
+  total_days: 7
+  seed: 42
+  quiet_baseline_soft: 1.0e-7
+  quiet_baseline_hard: 1.0e-8
+  noise_std_soft: 1.0e-9
+  noise_std_hard: 1.0e-10
+  dropout_prob: 0.001
+  flare_rates:
+    B: 2
+    C: 1
+    M: 1
+    X: 1
+
+features:
+  layers: [L1, L2, L3]
+  rolling_windows_s: [60, 300]
+
+models:
+  random_forest:
+    n_estimators: 200
+    max_depth: 15
+    class_weight: "balanced"
+  logistic_regression:
+    class_weight: "balanced"
+    max_iter: 1000
+
+evaluation:
+  test_months: 2
+  tss_threshold: 0.6
+  brier_threshold: 0.08
+  false_alarm_threshold: 0.25
