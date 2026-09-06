@@ -16,6 +16,8 @@ from typing import Dict, Optional, Tuple
 
 from hmmlearn import hmm
 
+from src.models.splits import temporal_train_test_masks
+
 STATE_NAMES = ['Quiet', 'Energy Accumulation', 'Precursor', 'Initiation', 'Peak', 'Decay']
 FEATURE_COLS_FOR_RANKING = ['soft_flux_max', 'soft_flux_mean', 'dsoft_dt_mean']
 
@@ -29,7 +31,15 @@ def _feature_matrix(processed_dir: Path) -> Tuple[pd.DataFrame, pd.DataFrame]:
     cols = [c for c in features.columns if c != 'window_start']
     X = features[cols].to_numpy(dtype=np.float64)
     X = np.nan_to_num(X, nan=0.0, posinf=0.0, neginf=0.0)
-    return pd.DataFrame(X, columns=cols), meta
+    df = pd.DataFrame(X, columns=cols)
+    # Constant columns carry no information and make the Gaussian covariance
+    # degenerate (e.g. unfilled historical-context features) -> drop them.
+    var = df.var(axis=0)
+    keep = var[var > 1e-12].index
+    dropped = sorted(set(cols) - set(keep))
+    if dropped:
+        print(f"    Dropping constant feature columns: {dropped}")
+    return df[list(keep)], meta
 
 
 def assign_state_names(state_means: pd.DataFrame, feature_cols) -> Dict[int, str]:
@@ -83,9 +93,10 @@ def train_state_machine(config_path: str = "config/config.yaml") -> Dict:
 
     X_df, meta = _feature_matrix(processed_dir)
     ts = pd.DatetimeIndex(pd.to_datetime(meta['window_start']))
-    split_time = ts.max() - pd.Timedelta(days=float(eval_cfg.get('test_days', 30)))
-    train_mask = ts < split_time
-    X_train = X_df[train_mask.values]
+    train_mask, test_mask = temporal_train_test_masks(
+        ts, float(eval_cfg.get('test_days', 30))
+    )
+    X_train = X_df[train_mask]
     mean = X_train.mean(axis=0)
     std = X_train.std(axis=0) + 1e-8
     X_train_z = (X_train - mean) / std
@@ -117,7 +128,6 @@ def train_state_machine(config_path: str = "config/config.yaml") -> Dict:
     labels = meta['label_code'].to_numpy(dtype=int) if 'label_code' in meta.columns else np.zeros(len(meta), dtype=int)
     init_peak = [i for i, n in name_map.items() if n in ('Initiation', 'Peak')]
     in_s34 = np.isin(states, init_peak)
-    test_mask = ~train_mask.values
     cooccurrence = float((labels[in_s34 & test_mask] > 0).mean()) if (in_s34 & test_mask).any() else 0.0
     positive_test = test_mask & (labels > 0)
     detection_in_s34 = float(in_s34[positive_test].mean()) if positive_test.any() else 0.0

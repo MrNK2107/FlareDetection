@@ -14,6 +14,8 @@ from typing import Dict, Optional, Tuple
 
 from sklearn.ensemble import GradientBoostingRegressor
 
+from src.models.splits import temporal_train_test_masks
+
 
 def build_lead_time_dataset(
     processed_dir: str = "data/processed",
@@ -30,6 +32,7 @@ def build_lead_time_dataset(
         return None
     catalogue = pd.read_parquet(catalogue_path)
     ts = pd.DatetimeIndex(pd.to_datetime(meta['window_end']))
+    # keep the returned dataset aligned with the adaptive masks
     peaks = pd.DatetimeIndex(pd.to_datetime(catalogue['peak_utc'])).sort_values()
     peak_arr = peaks.values.astype('datetime64[s]').astype(np.int64)
     ts_arr = ts.values.astype('datetime64[s]').astype(np.int64)
@@ -43,12 +46,11 @@ def build_lead_time_dataset(
     X = np.nan_to_num(X, nan=0.0, posinf=0.0, neginf=0.0)
     y = minutes
     window_ts = ts[idx]
-    split_time = window_ts.max() - pd.Timedelta(days=test_days)
-    train_mask = window_ts < split_time
+    train_mask, test_mask = temporal_train_test_masks(window_ts, test_days)
     return {
         'X': X, 'y': y, 'cols': cols,
         'train_idx': np.where(train_mask)[0],
-        'test_idx': np.where(~train_mask)[0],
+        'test_idx': np.where(test_mask)[0],
     }
 
 

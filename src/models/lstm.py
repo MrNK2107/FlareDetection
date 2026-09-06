@@ -11,6 +11,7 @@ from pathlib import Path
 from typing import Dict, Optional
 
 from src.models.evaluate import evaluate_model, save_evaluation_results
+from src.models.splits import temporal_train_test_masks
 
 CLASS_MAP = {'None': 0, 'B': 1, 'C': 2, 'M': 3, 'X': 4}
 DEVICE = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
@@ -78,11 +79,9 @@ def load_dl_dataset(
     n = min(len(X_soft), len(X_hard), len(y), len(meta))
     meta = meta.iloc[:n].reset_index(drop=True)
     ts = pd.DatetimeIndex(pd.to_datetime(meta['window_start']))
-    split_time = ts.max() - pd.Timedelta(days=test_days)
-    train_idx = np.where(ts < split_time)[0]
-    test_idx = np.where(ts >= split_time)[0]
-    if len(train_idx) == 0 or len(test_idx) == 0:
-        raise ValueError("Temporal split produced an empty side; reduce test_days")
+    train_mask, test_mask = temporal_train_test_masks(ts, test_days)
+    train_idx = np.where(train_mask)[0]
+    test_idx = np.where(test_mask)[0]
     if max_train_windows is not None and len(train_idx) > max_train_windows:
         rng = np.random.default_rng(seed)
         pos = train_idx[y[train_idx] > 0]

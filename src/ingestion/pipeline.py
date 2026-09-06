@@ -145,9 +145,18 @@ def run_ingestion_pipeline(
     print("  Computing physics features")
     win_soft = np.stack([view.get_soft(i) for i in selected])
     win_hard = np.stack([view.get_hard(i) for i in selected])
+    # Real flare history for time_since_last_flare_s (doc/04 §3): from the
+    # generator's catalogue. Without it the feature degrades to a constant.
+    flare_history = []
+    catalogue_path = Path(config['data']['external_dir']) / 'flare_catalogue.parquet'
+    if catalogue_path.exists():
+        cat = pd.read_parquet(catalogue_path)
+        if len(cat):
+            flare_history = list(pd.DatetimeIndex(pd.to_datetime(cat['start_utc'])))
     physics_features = compute_physics_features(
         win_soft, win_hard,
         window_timestamps=list(selected_meta['window_start']),
+        flare_history=flare_history,
         config=config,
     )
     full_features = pd.concat([features.reset_index(drop=True), physics_features.reset_index(drop=True)], axis=1)

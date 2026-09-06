@@ -8,6 +8,7 @@ from typing import Dict, Optional
 
 from src.models.baselines import train_logistic_regression, train_random_forest
 from src.models.evaluate import evaluate_model, save_evaluation_results
+from src.models.splits import temporal_train_test_masks
 
 
 def prepare_training_data(
@@ -39,14 +40,7 @@ def prepare_training_data(
     X = np.nan_to_num(X, nan=0.0, posinf=0.0, neginf=0.0)
     y = meta['label_code'].to_numpy(dtype=np.int32) if 'label_code' in meta.columns else np.zeros(n, dtype=np.int32)
     ts = pd.DatetimeIndex(pd.to_datetime(meta['window_start']))
-    split_time = ts.max() - pd.Timedelta(days=test_days)
-    train_mask = ts < split_time
-    test_mask = ~train_mask
-    if train_mask.sum() == 0 or test_mask.sum() == 0:
-        raise ValueError(
-            f"Temporal split produced an empty side (train={int(train_mask.sum())}, "
-            f"test={int(test_mask.sum())}); reduce evaluation.test_days"
-        )
+    train_mask, test_mask = temporal_train_test_masks(ts, test_days)
     train_indices = np.where(train_mask)[0]
     test_indices = np.where(test_mask)[0]
     assert ts[train_indices].max() < ts[test_indices].min(), "Temporal split violated"

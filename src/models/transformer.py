@@ -20,6 +20,7 @@ from typing import Dict, Optional, Tuple
 
 from src.models.focal_loss import FocalLoss
 from src.models.evaluate import evaluate_model, save_evaluation_results
+from src.models.splits import temporal_train_test_masks
 
 DEVICE = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 SEVERITY_CLASSES = ['B', 'C', 'M', 'X']
@@ -245,13 +246,12 @@ def train_transformer(config_path: str = "config/config.yaml") -> Dict:
     eng = np.nan_to_num(eng, nan=0.0, posinf=0.0, neginf=0.0)
 
     ts = pd.DatetimeIndex(pd.to_datetime(dl_meta['window_start']))
-    split_time = ts.max() - pd.Timedelta(days=float(eval_cfg.get('test_days', 30)))
-    train_mask = ts < split_time
-    test_mask = ~train_mask
+    train_mask, test_mask = temporal_train_test_masks(
+        ts, float(eval_cfg.get('test_days', 30))
+    )
     train_idx = np.where(train_mask)[0]
     test_idx = np.where(test_mask)[0]
-    if len(train_idx) == 0 or len(test_idx) == 0:
-        raise ValueError("Temporal split produced an empty side; reduce test_days")
+    split_time = ts[test_idx].min()
 
     catalogue_path = Path(config['data']['external_dir']) / 'flare_catalogue.parquet'
     catalogue = pd.read_parquet(catalogue_path) if catalogue_path.exists() else pd.DataFrame()
