@@ -1,0 +1,121 @@
+DASHBOARD, ALERTING & OPERATIONS - PHASES 7 & 5
+Aditya-L1 Solar Flare Forecasting System
+=============================================
+
+The dashboard is the primary operator interface. It must be usable by non-ML
+scientists who understand solar physics but not model internals.
+
+
+1. REAL-TIME VIEW
+
+  1.1 Live Time-Series Plot
+    - Dual-axis chart showing soft and hard X-ray flux for the past 60 minutes.
+    - Autoscrolling with new data arriving via WebSocket.
+    - Color-coded: soft X-ray (blue), hard X-ray (red/orange).
+
+  1.2 Probability Gauge
+    - Circular gauge showing current flare_probability.
+    - Color bands: green for <30%, amber for 30-70%, red for >70%.
+    - Numeric percentage displayed at center.
+
+  1.3 State Indicator
+    - Current solar_state displayed as a labeled badge.
+    - Animated transition arrow showing most probable next state.
+    - Color per state: Quiet (green), Energy Accumulation (yellow),
+      Precursor (orange), Initiation (red), Peak (dark red), Decay (purple).
+
+  1.4 Lead Time Countdown
+    - Displayed only when flare_probability > 0.3.
+    - Shows expected_lead_time_min with 90% confidence interval bands.
+    - Countdown timer format: MM:SS remaining.
+
+
+2. EXPLAINABILITY PANEL
+
+  2.1 SHAP Bar Chart
+    - Horizontal bar chart.
+    - Top 5 features with positive/negative contribution colors.
+    - Red = increasing flare probability, Blue = decreasing.
+    - Bar length = SHAP value magnitude.
+
+  2.2 Attention Heatmap
+    - 20-minute window x dual-channel (soft + hard).
+    - Rendered as color gradient overlay on the time-series plot.
+    - Bright yellow/white = high attention weight.
+
+  2.3 Explanation Text Block
+    - Displays auto-generated explanation_text in a readable card.
+    - Font styling: key numbers highlighted, feature names in bold.
+
+
+3. ALERT SYSTEM
+
+  3.1 Trigger
+    - Push alert when flare_probability crosses 0.5 threshold.
+    - Rising edge only - no repeat alerts within 15 minutes (quiet window).
+
+  3.2 Alert Payload
+    Must include:
+    - severity_probs (B/C/M/X probabilities)
+    - expected_lead_time_min
+    - explanation_text
+    - Deeplink to dashboard at the triggering timestamp
+
+  3.3 Alert Channels
+    - Email (SMTP)
+    - Webhook (JSON POST) - compatible with Slack, Teams, etc.
+    - Browser notification (Web Push API)
+
+  3.4 Suppression
+    - Configurable quiet window. Default: 15 minutes after any alert.
+    - Suppression resets after quiet window elapses.
+
+
+4. HISTORICAL VIEW
+
+  4.1 Timeline
+    - Past 30 days with flare events overlaid (from GOES catalogue).
+    - Vertical markers at flare onset times.
+
+  4.2 Hindcast Overlay
+    - Model's historical probability curve vs actual flare onset.
+    - Used to visually evaluate model calibration over time.
+
+  4.3 Export
+    - CSV export for any selected date range.
+    - All inference payloads at 10-second cadence.
+
+
+5. CONTINUOUS LEARNING PIPELINE
+
+  The 11-year solar cycle means a model trained today may degrade within 2-3
+  years. The continuous learning pipeline is required for long-term viability.
+
+  5.1 Retraining Triggers
+
+    +----------------------------+--------------------------------------------------+
+    | Trigger                    | Condition                                         |
+    +----------------------------+--------------------------------------------------+
+    | Scheduled                  | Monthly evaluation job compares rolling 30-day    |
+    |                            | TSS against deployment baseline.                  |
+    +----------------------------+--------------------------------------------------+
+    | Alert-triggered            | If TSS drops more than 0.1 below baseline on     |
+    |                            | any 7-day window, trigger immediate retraining.  |
+    +----------------------------+--------------------------------------------------+
+    | Data volume                | When new labeled flare events accumulate to       |
+    |                            | >500 new samples, queue retraining.              |
+    +----------------------------+--------------------------------------------------+
+
+  5.2 Deployment Gate
+
+    Rule 1:
+      New model must outperform current production model on the held-out
+      evaluation set on all 5 metrics before promotion.
+
+    Rule 2:
+      Shadow deployment: run new model in parallel for 72 hours, comparing
+      outputs without serving them to the dashboard.
+
+    Rule 3:
+      Version all models with timestamp and data window. Never overwrite
+      production weights.

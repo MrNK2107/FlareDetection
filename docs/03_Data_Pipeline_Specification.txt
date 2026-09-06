@@ -1,0 +1,83 @@
+DATA PIPELINE SPECIFICATION - PHASE 1
+Aditya-L1 Solar Flare Forecasting System
+==========================================
+
+This is the most important phase. Poor alignment or inconsistent normalization
+will corrupt every downstream component. Do not skip to modeling until this
+pipeline passes all validation checks.
+
+
+1. TIMESTAMP SYNCHRONIZATION
+
+  Requirement:
+    Resample both SoLEXS (soft X-ray) and HEL1OS (hard X-ray) streams to a
+    common UTC-aligned frequency of 1 second or the instrument's native
+    cadence, whichever is coarser.
+
+  Gap Handling:
+    - Forward-fill for gaps shorter than 5 seconds.
+    - Flag and isolate gaps longer than 5 seconds for downstream uncertainty
+      propagation.
+
+  Output Schema:
+    Single Parquet or HDF5 file with the following columns:
+    ------------------------------------------------------------------
+      Column               Type           Description
+    ------------------------------------------------------------------
+      timestamp_utc        datetime       UTC-aligned timestamp
+      soft_flux            float          SoLEXS soft X-ray flux
+      hard_flux            float          HEL1OS hard X-ray flux
+      soft_quality_flag    int            SoLEXS quality flag (0=good, 1=bad)
+      hard_quality_flag    int            HEL1OS quality flag (0=good, 1=bad)
+    ------------------------------------------------------------------
+
+
+2. CLEANING
+
+  Rule 1: Remove rows where either quality flag indicates sensor glitch or
+          calibration event.
+
+  Rule 2: Detect and remove duplicate timestamps. Keep the first occurrence.
+
+  Rule 3: Clip values to physically plausible ranges (defined per instrument
+          specification). Log clipped rows for audit.
+
+  Acceptance Criterion:
+    Missing data rate after cleaning must be less than 2%.
+
+
+3. NORMALIZATION
+
+  IMPORTANT: Do NOT use global min-max normalization. Solar flux varies
+  strongly with the solar cycle.
+
+  Method:
+    Rolling z-score normalization with a 6-hour window:
+      z(t) = (x(t) - mean(t-6h to t)) / std(t-6h to t)
+
+  Apply normalization independently to each channel (soft_flux and hard_flux).
+
+  Acceptance Criterion:
+    Unit tests must assert that rolling z-score mean is approximately 0 and
+    standard deviation is approximately 1 for any 6-hour slice.
+
+
+4. WINDOWING
+
+  Training Windows:
+    - Window length: 20 minutes
+    - Stride: 10 seconds
+    - Forecast horizon: 30 minutes
+
+  Labeling:
+    Each window is labeled by the maximum GOES class occurring in the 30-minute
+    future window: B, C, M, X, or None (no flare).
+
+    Source labels from the NOAA/GOES flare catalogue.
+
+  Storage:
+    Store windows as numpy memmap or torch Dataset for memory efficiency on
+    large datasets.
+
+  Acceptance Criterion:
+    100% of windows must have aligned timestamps.

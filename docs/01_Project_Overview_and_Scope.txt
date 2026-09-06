@@ -1,0 +1,101 @@
+PROJECT OVERVIEW & SCOPE
+Aditya-L1 Solar Flare Forecasting System
+==========================================
+
+Version: 1.0
+Status: Draft - For Developer Review
+Data Source: ISRO Aditya-L1 (SoLEXS + HEL1OS)
+Audience: Engineering & ML Team
+
+
+1. CONCEPT
+
+The system ingests real-time dual-channel X-ray telemetry from ISRO's Aditya-L1
+spacecraft, processes it through a multi-stage signal and ML pipeline, and
+produces probabilistic flare forecasts with explainable outputs.
+
+The core insight is borrowed from clinical monitoring: just as cardiologists
+read an ECG not for raw voltage but for peaks, slopes, rhythm, and
+cross-signal relationships, this system treats solar X-ray telemetry the same
+way. This analogy is technically valid for three reasons:
+
+  - Solar flares follow pre-event signatures. Soft X-ray flux typically rises
+    minutes before hard X-ray emission accelerates, giving a measurable
+    precursor window.
+
+  - The two channels are complementary, not redundant. Soft X-rays (SoLEXS)
+    capture thermal plasma emission; hard X-rays (HEL1OS) reflect non-thermal
+    electron acceleration. Their lag correlation carries physical meaning.
+
+  - Signal structure, not raw amplitude, is the predictive signal. Rates of
+    change, frequency-domain patterns, and cross-channel phase differences are
+    more predictive than instantaneous flux values alone.
+
+
+2. VALIDATION VERDICT
+
+The proposal is technically grounded. The ECG analogy, multi-stream encoding,
+and state-machine framing are all defensible. The key risks - label scarcity,
+class imbalance, and unsupervised state inference - are real but solvable with
+standard techniques documented in this PRD.
+
+
+3. RISK REGISTER
+
++-----------------------+------------------------------------------------+----------------------------------------------------+
+| Risk                  | Description                                    | Mitigation                                         |
++-----------------------+------------------------------------------------+----------------------------------------------------+
+| Class Imbalance       | Sun is quiet >95% of the time. Naive accuracy  | Focal loss, SMOTE on feature space, anomaly-aware  |
+|                       | is misleading.                                 | sampling.                                          |
++-----------------------+------------------------------------------------+----------------------------------------------------+
+| Hidden State Labels   | No ground truth for 'precursor' or 'energy     | Unsupervised clustering + weak supervision from    |
+|                       | accumulation' states.                          | GOES flare catalogue.                              |
++-----------------------+------------------------------------------------+----------------------------------------------------+
+| Small Labeled Dataset | Scientific datasets are small. Deep models may | Feature engineering + classical baselines first.   |
+|                       | overfit.                                       | Deep learning second.                              |
++-----------------------+------------------------------------------------+----------------------------------------------------+
+| Sensor Gaps           | Aditya-L1 may have telemetry dropouts or       | Robust imputation; flag-uncertain outputs during   |
+|                       | calibration drift.                             | gap windows.                                       |
++-----------------------+------------------------------------------------+----------------------------------------------------+
+| Solar Cycle Drift     | Model trained on Cycle 25 data may degrade     | Continuous learning pipeline with periodic          |
+|                       | over years.                                    | evaluation and retraining.                         |
++-----------------------+------------------------------------------------+----------------------------------------------------+
+
+
+4. OUT OF SCOPE (v1.0)
+
+  - Magnetogram or EUV image data integration - optical data requires a
+    separate CV pipeline.
+
+  - Multi-spacecraft data fusion (SDO, STEREO) - complicates alignment without
+    proportionate gain in v1.
+
+  - Flare location prediction on the solar disk - requires spatial modeling
+    beyond 1D time series.
+
+  - Mobile native application - web-responsive dashboard is sufficient for v1.
+
+  - User authentication and multi-tenant access - single-operator deployment
+    assumed for v1.
+
+
+5. OPEN QUESTIONS FOR TEAM RESOLUTION
+
++-----+-------------------------------------------------------------+---------------------------+
+| #   | Question                                                     | Owner / Deadline          |
++-----+-------------------------------------------------------------+---------------------------+
+| 1   | What is the exact native sampling cadence of SoLEXS and     | WS-1 / Sprint 1           |
+|     | HEL1OS? This determines the resampling target frequency.    |                           |
++-----+-------------------------------------------------------------+---------------------------+
+| 2   | Are quality flags already in the telemetry headers, or      | WS-1 / Sprint 1           |
+|     | must they be inferred from variance thresholds?             |                           |
++-----+-------------------------------------------------------------+---------------------------+
+| 3   | What is the available labeled flare catalogue for           | WS-2 / Sprint 1           |
+|     | Aditya-L1 data? Is GOES cross-referencing sufficient?       |                           |
++-----+-------------------------------------------------------------+---------------------------+
+| 4   | Is 30-minute forecast horizon operationally correct, or     | All / Sprint 0            |
+|     | does the use case require 60-minute or 2-hour windows?      |                           |
++-----+-------------------------------------------------------------+---------------------------+
+| 5   | What is the minimum acceptable inference latency? Does      | WS-3 & WS-4 / Sprint 0    |
+|     | the model need to run faster than real time?                |                           |
++-----+-------------------------------------------------------------+---------------------------+

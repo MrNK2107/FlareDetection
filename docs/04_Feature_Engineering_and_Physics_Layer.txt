@@ -1,0 +1,132 @@
+FEATURE ENGINEERING & PHYSICS LAYER - PHASES 2 & 3
+Aditya-L1 Solar Flare Forecasting System
+=============================================
+
+Feature engineering is where this system will separate itself from baseline
+approaches. Implement features in layers. Validate each layer independently
+before adding the next.
+
+
+PHASE 2 - FEATURE ENGINEERING LAYERS
+------------------------------------
+
+
+LAYER 1 - RAW
+
+  +---------------------------+---------------------------------------------+
+  | Feature                   | Implementation Notes                        |
+  +---------------------------+---------------------------------------------+
+  | soft_flux                 | Direct from cleaned pipeline                |
+  | hard_flux                 | Direct from cleaned pipeline                |
+  +---------------------------+---------------------------------------------+
+
+
+LAYER 2 - DYNAMICS
+
+  +---------------------------+---------------------------------------------+
+  | Feature                   | Implementation Notes                        |
+  +---------------------------+---------------------------------------------+
+  | dSoft/dt                  | First derivative. Use np.gradient.          |
+  | dHard/dt                  | First derivative. Use np.gradient.          |
+  | d2Soft/dt2                | Second derivative. Use np.gradient.         |
+  | rolling_mean(60s)         | Rolling mean over 60 seconds. pandas.       |
+  | rolling_mean(300s)        | Rolling mean over 300 seconds. pandas.      |
+  | rolling_std(60s)          | Rolling standard deviation over 60 seconds. |
+  | rolling_std(300s)         | Rolling standard deviation over 300 seconds.|
+  | rolling_variance(300s)    | Rolling variance over 300 seconds.          |
+  +---------------------------+---------------------------------------------+
+
+
+LAYER 3 - CROSS-CHANNEL
+
+  +-----------------------------------+---------------------------------------+
+  | Feature                           | Implementation Notes                  |
+  +-----------------------------------+---------------------------------------+
+  | soft/hard ratio                   | Element-wise ratio. Clip denominator. |
+  | soft - hard difference            | Element-wise difference.              |
+  | Pearson corr (lag 0 to 120s)      | Lag-correlation sweep across 0-120s.  |
+  | Peak lag from correlation sweep   | Store lag at max correlation.         |
+  | Phase difference (Hilbert)        | Hilbert transform on each channel,    |
+  |                                   | compute instantaneous phase diff.     |
+  +-----------------------------------+---------------------------------------+
+
+  Key Physics Observation:
+    The lag at which the cross-channel Pearson correlation peaks - measured
+    over a 2-minute sliding window - is one of the strongest single precursor
+    features. Prioritize this in feature importance analysis.
+
+
+LAYER 4 - FREQUENCY
+
+  +-----------------------------------+---------------------------------------+
+  | Feature                           | Implementation Notes                  |
+  +-----------------------------------+---------------------------------------+
+  | FFT power [0.001-0.01 Hz]         | Use scipy.signal.welch for PSD.       |
+  | FFT power [0.01-0.1 Hz]           | Use scipy.signal.welch for PSD.       |
+  | FFT power [0.1-1 Hz]              | Use scipy.signal.welch for PSD.       |
+  | Wavelet energy (Morlet,           | Use PyWavelets for CWT.               |
+  |   scales 8 to 256s)               |                                       |
+  | Spectrogram entropy               | Shannon entropy of spectrogram bins.  |
+  +-----------------------------------+---------------------------------------+
+
+  Libraries: scipy.signal.welch, PyWavelets
+
+
+LAYER 5 - CHANGEPOINT
+
+  +-----------------------------------+---------------------------------------+
+  | Feature                           | Implementation Notes                  |
+  +-----------------------------------+---------------------------------------+
+  | CUSUM alarm flag                  | Cumulative sum control chart.         |
+  | Bayesian changepoint posterior    | Online Bayesian changepoint prob.     |
+  | ruptures breakpoint distance (sec)| Use ruptures with PELT search method. |
+  | Treat each break as binary flag   | Per-window flag: break detected or    |
+  |   plus distance feature           | not, plus seconds since last break.   |
+  +-----------------------------------+---------------------------------------+
+
+  Library: ruptures (PELT search method)
+
+
+PHASE 3 - PHYSICS-AWARE FEATURE LAYER
+--------------------------------------
+
+This layer encodes solar physics domain knowledge as additional features. The
+goal is not to hardcode rules, but to give the model informative inputs that
+it might not discover from raw data alone.
+
+
+3.1 STAGE INDICATORS
+
+  soft_rising (binary):
+    = 1 if dSoft/dt > threshold for 3 consecutive windows.
+    Threshold = 95th percentile of dSoft/dt in quiet-Sun baseline.
+
+  hard_accelerating (binary):
+    = 1 if d2Hard/dt2 > threshold for 2 consecutive windows.
+    Threshold = 95th percentile of d2Hard/dt2 in quiet-Sun baseline.
+
+  precursor_candidate (binary):
+    = 1 if soft_rising AND hard_flux < 1.5 * hard_quiet_baseline.
+
+
+3.2 DERIVED RATIOS
+
+  thermal_fraction:
+    soft_flux / (soft_flux + hard_flux)
+    Smoothed over 30 seconds.
+
+  nonthermal_index:
+    rate of change of hard_flux relative to soft_flux:
+    (dHard/dt) / (dSoft/dt + epsilon)
+    where epsilon is a small constant to avoid division by zero.
+
+
+3.3 HISTORICAL CONTEXT
+
+  time_since_last_flare (seconds):
+    Time elapsed since the last flare event (from GOES catalogue).
+    Solar active regions often produce repeated events.
+
+  cycle_phase_proxy (float [0, 1]):
+    Current solar cycle phase: day-of-cycle normalized to [0, 1] using
+    estimated solar maximum date. 0 = solar minimum, 1 = solar maximum.

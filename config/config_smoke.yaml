@@ -1,8 +1,8 @@
 data:
-  raw_dir: "data/raw"
-  processed_dir: "data/processed"
-  windows_dir: "data/windows"
-  external_dir: "data/external"
+  raw_dir: "data/raw_smoke"
+  processed_dir: "data/processed_smoke"
+  windows_dir: "data/windows_smoke"
+  external_dir: "data/external_smoke"
 
 ingestion:
   target_frequency_hz: 1.0
@@ -11,30 +11,26 @@ ingestion:
   window_length_s: 1200
   window_stride_s: 10
   forecast_horizon_s: 1800
-  # Stride for candidate feature-extraction windows. Full-spec 10s over 180d
-  # is ~1.5M windows; 60s keeps extraction tractable while labels below are
-  # still computed at the spec's 10s stride (see MVP_PLAN.md decision log).
   feature_stride_s: 60
-  # Hybrid stride (see MVP_PLAN.md decision log):
-  # raw windows for DL models use a coarser stride + internal decimation
   dl_window_stride_s: 120
   dl_internal_cadence_s: 10
   dl_dtype: float32
 
 synthetic_data:
-  total_days: 180
+  total_days: 3
   seed: 42
   chunk_days: 15
+  min_gap_s: 900
   quiet_baseline_soft: 1.0e-7
   quiet_baseline_hard: 1.0e-8
   noise_std_soft: 1.0e-9
   noise_std_hard: 1.0e-10
   dropout_prob: 0.001
   events_per_day:
-    B: 0.30
-    C: 0.20
-    M: 0.10
-    X: 0.03
+    B: 2.0
+    C: 1.5
+    M: 1.0
+    X: 0.5
 
 features:
   layers: [L1, L2, L3, L4, L5]
@@ -43,42 +39,42 @@ features:
 
 models:
   random_forest:
-    n_estimators: 200
-    max_depth: 15
+    n_estimators: 50
+    max_depth: 12
     class_weight: "balanced"
   logistic_regression:
     class_weight: "balanced"
-    max_iter: 1000
+    max_iter: 500
   lstm:
-    hidden_size: 128
+    hidden_size: 64
     num_layers: 2
     dropout: 0.2
-    epochs: 8
-    batch_size: 256
-    lr: 0.001
-    max_train_windows: 60000
-  transformer:
-    d_model: 128
-    nhead: 4
-    num_layers: 2
-    conv_kernels: [3, 7, 15]
-    fusion_dim: 256
-    dropout: 0.1
-    epochs: 6
+    epochs: 2
     batch_size: 128
-    lr: 0.0005
+    lr: 0.002
+    max_train_windows: 20000
+  transformer:
+    d_model: 64
+    nhead: 4
+    num_layers: 1
+    conv_kernels: [3, 7, 15]
+    fusion_dim: 128
+    dropout: 0.1
+    epochs: 2
+    batch_size: 64
+    lr: 0.001
     focal_gamma: 2.0
     focal_alpha: 0.75
     loss_weights: [0.5, 0.3, 0.2]
-    mc_dropout_samples: 20
-    max_train_windows: 60000
+    mc_dropout_samples: 10
+    max_train_windows: 20000
   hmm:
     n_states: 6
-    n_iter: 50
-    n_init: 3
+    n_iter: 30
+    n_init: 2
 
 evaluation:
-  test_days: 30
+  test_days: 0.5
   quiet_subsample_ratio: 4
   tss_threshold: 0.6
   brier_threshold: 0.08
@@ -92,14 +88,7 @@ alerting:
   channels:
     email:
       enabled: false
-      smtp_host: ""
-      smtp_port: 587
-      username: ""
-      password: ""
-      from_addr: ""
-      to_addrs: []
     webhook:
       enabled: false
-      url: ""
     browser:
       enabled: true

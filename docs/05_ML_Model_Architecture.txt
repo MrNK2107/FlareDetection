@@ -1,0 +1,113 @@
+ML MODEL ARCHITECTURE - PHASE 4
+Aditya-L1 Solar Flare Forecasting System
+==========================================
+
+Implement models in increasing complexity order. Each model must be evaluated
+against the same metric suite before the next is implemented. Do not skip the
+baseline.
+
+
+1. BASELINE MODELS (REQUIRED FIRST)
+
+  All baseline models must be implemented and evaluated before any work begins
+  on the primary architecture.
+
+  +---------------------------+------------------------------------------------+
+  | Model                     | Specification                                  |
+  +---------------------------+------------------------------------------------+
+  | Logistic Regression       | Trained on L1 + L2 features only. Establishes  |
+  |                           | statistical lower bound.                       |
+  +---------------------------+------------------------------------------------+
+  | Random Forest             | Trained on all feature layers (L1 through L5   |
+  |                           | plus physics layer). Strong classical baseline |
+  |                           | with interpretable feature importance.         |
+  +---------------------------+------------------------------------------------+
+  | LSTM                      | 2-layer, hidden size 128. Trained on raw       |
+  |                           | windowed signals (no feature engineering).     |
+  |                           | Establishes neural baseline.                   |
+  +---------------------------+------------------------------------------------+
+
+
+2. PRIMARY ARCHITECTURE: DUAL-STREAM TEMPORAL TRANSFORMER
+
+  Once baselines are established, implement the target architecture. The key
+  design principle is to process soft and hard X-ray streams through
+  independent encoders before fusion, allowing each encoder to specialize.
+
+  +---------------------------+------------------------------------------------+
+  | Component                 | Specification                                  |
+  +---------------------------+------------------------------------------------+
+  | Soft Encoder              | 1D Temporal CNN (kernel sizes 3, 7, 15)        |
+  |                           | -> Positional encoding                         |
+  |                           | -> Transformer encoder (4 heads, 2 layers,     |
+  |                           |    d_model=128)                                |
+  +---------------------------+------------------------------------------------+
+  | Hard Encoder              | Identical architecture to Soft Encoder.        |
+  |                           | Weights NOT shared between encoders.           |
+  +---------------------------+------------------------------------------------+
+  | Cross-Attention Layer     | Query from Hard encoder.                       |
+  |                           | Key and Value from Soft encoder.               |
+  |                           | Attention weights stored for explainability.   |
+  +---------------------------+------------------------------------------------+
+  | Feature Fusion            | Concatenate cross-attended embeddings +        |
+  |                           | engineered feature vector.                     |
+  |                           | Linear projection to 256-dim.                  |
+  +---------------------------+------------------------------------------------+
+  | Output Head               | Three parallel heads:                          |
+  |                           | (1) Flare probability sigmoid                  |
+  |                           | (2) Lead time regression (log-scale)            |
+  |                           | (3) Severity class softmax [B/C/M/X]            |
+  +---------------------------+------------------------------------------------+
+
+
+3. LOSS FUNCTION
+
+  +---------------------------+--------------------+----------------------------+
+  | Head                      | Loss Function      | Weight                     |
+  +---------------------------+--------------------+----------------------------+
+  | Flare probability         | Focal Loss         | 0.5                        |
+  |                           | (gamma=2, alpha=0.75)|                           |
+  |                           | Do NOT use BCE.    |                            |
+  +---------------------------+--------------------+----------------------------+
+  | Severity                  | Weighted cross-    | 0.3                        |
+  |                           | entropy (class     |                            |
+  |                           | weights inversely  |                            |
+  |                           | proportional to    |                            |
+  |                           | class frequency)   |                            |
+  +---------------------------+--------------------+----------------------------+
+  | Lead time                 | Huber loss on log- | 0.2                        |
+  |                           | transformed minutes |                            |
+  +---------------------------+--------------------+----------------------------+
+
+  Total loss:
+    L_total = 0.5 * L_focal + 0.3 * L_severity + 0.2 * L_leadtime
+    Tune weights via held-out validation.
+
+
+4. NOVEL EXTENSION: SOLAR STATE MACHINE
+
+  After the primary architecture is implemented, implement the hidden-state
+  model as a second forecasting path.
+
+  Latent States (6):
+    S0 - Quiet
+    S1 - Energy Accumulation
+    S2 - Precursor
+    S3 - Initiation
+    S4 - Peak
+    S5 - Decay
+
+  Training:
+    Train a discrete-state HMM or VQ-VAE to infer state labels in an
+    unsupervised manner from the feature matrix.
+
+  Validation:
+    Inferred states S3/S4 must co-occur with GOES catalogue events at >70%
+    rate.
+
+  Integration:
+    Use inferred state sequence as an additional input to the forecasting
+    head: state embedding (6-dim one-hot) concatenated into fusion layer.
+
+  Dashboard Output:
+    Expose current state and transition probabilities as a separate output.

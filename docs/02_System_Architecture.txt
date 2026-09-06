@@ -1,0 +1,101 @@
+SYSTEM ARCHITECTURE
+Aditya-L1 Solar Flare Forecasting System
+==========================================
+
+
+1. SEVEN-STAGE PIPELINE
+
+The system is divided into seven loosely coupled stages. Each stage has defined
+inputs, outputs, and owning workstream. This separation allows parallel
+development and independent testing.
+
++-----+-----------------------+----------------------------------------------+----------------+-------------------------------+
+| #   | Stage                 | Input -> Output                               | Owner          | Key Tech                      |
++-----+-----------------------+----------------------------------------------+----------------+-------------------------------+
+| 1   | Data Ingestion &      | Raw telemetry -> Synchronized DataFrame       | Data Eng       | pandas, HDF5, netCDF4         |
+|     | Alignment             |                                              |                |                               |
++-----+-----------------------+----------------------------------------------+----------------+-------------------------------+
+| 2   | Signal Processing     | Synchronized DF -> Windowed feature arrays    | Data Eng       | scipy, PyWavelets             |
++-----+-----------------------+----------------------------------------------+----------------+-------------------------------+
+| 3   | Feature Engineering   | Feature arrays -> Enriched feature matrix     | Physics + ML   | tsfresh, ruptures             |
++-----+-----------------------+----------------------------------------------+----------------+-------------------------------+
+| 4   | Physics Layer         | Feature matrix -> Physics-aware features      | Physics        | Custom formulae               |
++-----+-----------------------+----------------------------------------------+----------------+-------------------------------+
+| 5   | ML Model              | Features -> Probability + lead time           | ML             | PyTorch, Hugging Face         |
++-----+-----------------------+----------------------------------------------+----------------+-------------------------------+
+| 6   | Explainability        | Model outputs -> Human-readable reasons       | ML             | SHAP, Captum                  |
++-----+-----------------------+----------------------------------------------+----------------+-------------------------------+
+| 7   | Dashboard & Alerts    | All outputs -> Operator interface             | Frontend       | React, FastAPI, WebSockets    |
++-----+-----------------------+----------------------------------------------+----------------+-------------------------------+
+
+
+2. DATA FLOW
+
+  Raw Telemetry (SoLEXS + HEL1OS)
+           |
+           v
+  Stage 1: Data Ingestion & Alignment
+    - Timestamp synchronization
+    - Cleaning (quality flags, dedup, clipping)
+    - Rolling z-score normalization (6-hour window)
+    - Sliding window generation (20-min windows, 10s stride, 30-min horizon)
+           |
+           v
+  Stage 2: Signal Processing
+    - L1 Raw features
+    - L2 Dynamics (derivatives, rolling stats)
+           |
+           v
+  Stage 3: Feature Engineering
+    - L3 Cross-channel features (lag correlation, phase difference)
+    - L4 Frequency features (FFT bands, wavelet energy, spectrogram entropy)
+    - L5 Changepoint features (CUSUM, Bayesian changepoint, ruptures)
+           |
+           v
+  Stage 4: Physics Layer
+    - Stage indicators (soft_rising, hard_accelerating, precursor_candidate)
+    - Derived ratios (thermal_fraction, nonthermal_index)
+    - Historical context (time_since_last_flare, cycle_proxy)
+           |
+           v
+  Stage 5: ML Model
+    - Baseline: Logistic Regression, Random Forest, LSTM
+    - Primary: Dual-Stream Temporal Transformer
+    - Extension: Solar State Machine (HMM / VQ-VAE)
+           |
+           v
+  Stage 6: Explainability
+    - SHAP feature attribution
+    - Cross-attention weight visualization
+    - Auto-generated explanation text (template engine, no LLM)
+           |
+           v
+  Stage 7: Dashboard & Alerts
+    - Real-time time-series plot
+    - Probability gauge
+    - State indicator with transition arrows
+    - SHAP bar chart + attention heatmap
+    - Push alerts (email, webhook, browser notification)
+
+
+3. PARALLEL DEVELOPMENT WORKSTREAMS
+
++----------+-----------------------------------+------------------------------------+----------------------+
+| Stream   | Deliverable                       | Interface Output                   | Depends On           |
++----------+-----------------------------------+------------------------------------+----------------------+
+| WS-1:    | Cleaning pipeline, windowing,     | Parquet files + numpy arrays with  | Raw telemetry        |
+| Data &   | feature L1-L2                     | schema doc                         | access               |
+| Signal   |                                   |                                    |                      |
++----------+-----------------------------------+------------------------------------+----------------------+
+| WS-2:    | Feature L3-L5 + physics layer     | Feature matrix appended to WS-1    | WS-1 output          |
+| Physics  |                                   |                                    |                      |
+| &        |                                   |                                    |                      |
+| Features |                                   |                                    |                      |
++----------+-----------------------------------+------------------------------------+----------------------+
+| WS-3:    | Baseline + Transformer + state    | Trained model weights + inference  | WS-2 feature matrix  |
+| AI       | machine                           | API (FastAPI)                      |                      |
+| Models   |                                   |                                    |                      |
++----------+-----------------------------------+------------------------------------+----------------------+
+| WS-4:    | React frontend + WebSocket        | Deployed web application           | WS-3 inference API   |
+| Dashboard| backend + alert system            |                                    | contract             |
++----------+-----------------------------------+------------------------------------+----------------------+

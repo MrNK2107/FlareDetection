@@ -4,12 +4,16 @@ from datetime import datetime
 
 
 class PredictionInput(BaseModel):
-    features: List[float] = Field(..., description="Feature vector")
+    features: List[float] = Field(..., description="Engineered feature vector")
     feature_names: List[str] = Field(..., description="Feature names")
     window_timestamp_utc: Optional[datetime] = None
+    # Raw windows at DL cadence enable the Transformer path (docs/05 §2).
+    soft_window: Optional[List[float]] = Field(None, description="Soft X-ray window at DL cadence")
+    hard_window: Optional[List[float]] = Field(None, description="Hard X-ray window at DL cadence")
 
 
 class PredictionOutput(BaseModel):
+    # docs/06 §4 inference payload specification
     flare_probability: float = Field(..., ge=0, le=1)
     severity_probs: Dict[str, float] = Field(default_factory=lambda: {"B": 0, "C": 0, "M": 0, "X": 0})
     expected_lead_time_min: Optional[float] = None
@@ -20,6 +24,9 @@ class PredictionOutput(BaseModel):
     explanation_text: str = ""
     model_uncertainty: float = Field(default=0.0, ge=0)
     inference_timestamp_utc: datetime = Field(default_factory=datetime.utcnow)
+    # docs/07 §2: attention weights serialized with the inference payload
+    attention_weights: Optional[List[float]] = None
+    model_version: str = "baseline-rf"
 
 
 class AlertPayload(BaseModel):

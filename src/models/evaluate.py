@@ -47,7 +47,10 @@ def evaluate_model(
         detection_rate = 0.0
         false_alarm_rate = 0.0
     if y_proba.shape[1] >= 2 and has_positive:
-        flare_proba = y_proba[:, 1] if y_proba.shape[1] > 1 else y_proba[:, 0]
+        # P(flare) = sum of positive-class probabilities (classes 1..4);
+        # for binary models this equals y_proba[:, 1]
+        flare_proba = y_proba[:, 1:].sum(axis=1) if y_proba.shape[1] > 2 else y_proba[:, 1]
+        flare_proba = np.clip(flare_proba, 0.0, 1.0)
         brier = brier_score_loss(y_binary, flare_proba)
         try:
             auc = roc_auc_score(y_binary, flare_proba)

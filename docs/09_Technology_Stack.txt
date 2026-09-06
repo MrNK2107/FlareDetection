@@ -1,0 +1,124 @@
+TECHNOLOGY STACK & DEPLOYMENT
+Aditya-L1 Solar Flare Forecasting System
+==========================================
+
+
+1. RECOMMENDED TECHNOLOGY STACK
+
+  +-----------------------+---------------------------+----------------------------------------------------+
+  | Layer                 | Technology                | Rationale                                          |
+  +-----------------------+---------------------------+----------------------------------------------------+
+  | Data storage          | Parquet + HDF5            | Efficient columnar storage for time-series. HDF5   |
+  |                       |                           | for large arrays.                                  |
+  +-----------------------+---------------------------+----------------------------------------------------+
+  | Signal processing     | scipy, PyWavelets,        | Well-maintained. Wavelet and changepoint support.  |
+  |                       | ruptures                  |                                                    |
+  +-----------------------+---------------------------+----------------------------------------------------+
+  | Feature engineering   | tsfresh, pandas           | tsfresh automates time-series feature generation   |
+  |                       |                           | for L2 features.                                   |
+  +-----------------------+---------------------------+----------------------------------------------------+
+  | ML framework          | PyTorch + PyTorch         | Lightning reduces boilerplate. Native Transformer  |
+  |                       | Lightning                 | support.                                           |
+  +-----------------------+---------------------------+----------------------------------------------------+
+  | Explainability        | SHAP, Captum              | Captum for Transformer attribution. SHAP for       |
+  |                       |                           | classical models.                                  |
+  +-----------------------+---------------------------+----------------------------------------------------+
+  | Inference API         | FastAPI + Uvicorn         | Async WebSocket support. Low latency.              |
+  +-----------------------+---------------------------+----------------------------------------------------+
+  | Frontend              | React + Recharts +        | Recharts for time-series plots. shadcn for         |
+  |                       | shadcn/ui                 | dashboard components.                              |
+  +-----------------------+---------------------------+----------------------------------------------------+
+  | Alerts                | SMTP + generic webhook    | Avoid vendor lock-in. Teams/Slack webhooks via     |
+  |                       |                           | generic JSON POST.                                 |
+  +-----------------------+---------------------------+----------------------------------------------------+
+  | Experiment tracking   | MLflow or W&B             | Required for model versioning and metric history.  |
+  +-----------------------+---------------------------+----------------------------------------------------+
+  | Continuous learning   | Prefect or Airflow DAG    | Scheduled retraining and evaluation jobs.          |
+  +-----------------------+---------------------------+----------------------------------------------------+
+
+
+2. INFERENCE API SPECIFICATION
+
+  Framework: FastAPI + Uvicorn (with async WebSocket support)
+
+  Endpoints:
+
+    GET  /health
+    Description: Health check endpoint. Returns model loaded status.
+
+    POST /predict
+    Description: Single window prediction.
+    Input: Feature vector (20-minute window of soft + hard flux).
+    Output: Full inference payload (see Evaluation Framework document).
+
+    GET /metrics
+    Description: Returns current evaluation metrics.
+
+    WS /ws/stream
+    Description: WebSocket for real-time streaming of predictions to
+                 dashboard. Server pushes inference payloads every 10
+                 seconds (or at configurable cadence).
+
+
+3. FRONTEND SPECIFICATION
+
+  Framework: React (functional components, hooks)
+  Charts: Recharts
+  UI Components: shadcn/ui
+
+  Dashboard Pages:
+    - Real-Time View (default): live plot, gauge, state indicator
+    - Historical View: 30-day timeline, hindcast overlay, CSV export
+    - Settings: alert thresholds, quiet window duration, API config
+
+  WebSocket Integration:
+    - Automatic reconnection with exponential backoff
+    - Connection status indicator in header
+    - Fallback to polling if WebSocket fails
+
+
+4. DATA STORAGE ARCHITECTURE
+
+  Directory Structure:
+
+    data/
+      raw/                  Raw telemetry (original format)
+      processed/            Cleaned, synchronized, normalized data
+        synchronized.parquet
+        cleaning_log.csv
+      windows/              Windowed arrays for ML
+        X_soft.npy
+        X_hard.npy
+        y_labels.npy
+        timestamps.npy
+
+    models/
+      logistic_regression.pkl
+      random_forest.pkl
+      transformer_weights.pt
+      feature_names.json
+      evaluation_results.json
+      decision_threshold.json
+
+    config/
+      config.yaml           All pipeline parameters
+
+
+5. DEPLOYMENT ARCHITECTURE
+
+  +-------------------+-----------------------------+---------------------------+
+  | Component         | Platform                    | Configuration             |
+  +-------------------+-----------------------------+---------------------------+
+  | Inference API     | Cloud VM or container       | Expose port 8000          |
+  | (FastAPI)         | (e.g., Render, Railway)     | CORS configured           |
+  +-------------------+-----------------------------+---------------------------+
+  | Dashboard         | Static site hosting         | Built via npm run build   |
+  | (React)           | (e.g., Render Static, Vercel)| VITE_API_URL set for env |
+  +-------------------+-----------------------------+---------------------------+
+  | Data storage      | Cloud storage or mounted    | Read-only from API,       |
+  | (Parquet/HDF5)    | volume                      | write-only from pipeline  |
+  +-------------------+-----------------------------+---------------------------+
+  | Scheduler         | Cron job or Prefect         | Runs periodic retraining  |
+  | (Continuous       |                             | and evaluation jobs       |
+  |  learning)        |                             |                           |
+  +-------------------+-----------------------------+---------------------------+

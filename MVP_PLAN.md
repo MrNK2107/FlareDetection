@@ -1,182 +1,54 @@
-# FlareClassifier MVP — Agentic Implementation Plan
+# FlareClassifier — Full-Spec Implementation Plan (v1.0)
 
-## Understanding Summary
+## Status
+MVP (Tasks 1–10) is **complete**: all 7 pipeline stages exist, 49 tests pass, models trained, API + dashboard skeleton operational. This plan closes the gap between the MVP and the full spec in `docs/` (which supersedes MVP scope).
 
-- **What**: End-to-end MVP of Aditya-L1 Solar Flare Forecasting System
-- **Why**: Demonstrate AI-powered early warning for solar flares from X-ray telemetry
-- **Who**: Single operator/scientist using a web dashboard
-- **Data**: Synthetic SoLEXS (soft X-ray) + HEL1OS (hard X-ray) time-series telemetry
-- **Scope**: All 7 PRD phases at minimal fidelity — data pipeline → baseline ML → API → dashboard
-- **Key constraint**: Agentic execution — every task is self-contained with clear inputs/outputs/verification
+## Gap Analysis (MVP → full spec)
+| Area | Missing | Spec ref |
+|---|---|---|
+| Features | L4 frequency, L5 changepoint layers | docs/04 |
+| Models | LSTM baseline; Dual-Stream Temporal Transformer (PyTorch not yet a dep) | docs/05 |
+| State machine | No HMM → `solar_state` always "Unknown", `state_transition_probs` null | docs/05 §4 |
+| Lead time | Placeholder (`15 + jitter ±3`), no model, no real CI | docs/06 §4 |
+| Evaluation | No M+X-specific detection rate, no lead-time MAE; 7-day data vs 6-month held-out requirement | docs/06 |
+| API | Attention weights not serialized; no deep-model SHAP path | docs/07 |
+| Dashboard | Sends fake zero feature vectors; plots probabilities as flux; no attention heatmap/countdown/history | docs/08 |
+| Alerts | `print()` only — no email/webhook/browser channels | docs/08 §3 |
+| History | No inference-payload storage → no hindcast, no CSV export | docs/08 §4 |
+| Continuous learning | No retraining triggers, registry, promotion gate, shadow mode | docs/08 §5 |
 
-## Assumptions
+## User Decisions (locked)
+1. **Full PyTorch** — LSTM baseline + Dual-Stream Transformer with attention explainability + MC-Dropout uncertainty.
+2. **180 days of synthetic data** with **hybrid strides** (features at 10s, raw DL windows at 60s, float32 memmap).
+3. **File-based model registry** (timestamped dirs + metadata + promotion gate) instead of MLflow.
+4. **Plan + implement immediately** after plan approval.
 
-| # | Assumption | Source |
-|---|-----------|--------|
-| A1 | No real Aditya-L1 telemetry available | User confirmed |
-| A2 | MVP uses classical baselines (LR + RF), not Transformer | PRD Phase 4: "Baseline models required first" |
-| A3 | Synthetic data embeds ground-truth labels (known flare events) | Enables verification without external catalogue |
-| A4 | Rolling z-score normalization (6h window) per PRD 3.1.3 | PRD requirement |
-| A5 | 20-minute sliding windows, 10s stride, 30-min forecast horizon | PRD 3.1.4 |
-| A6 | Temporal train/test split (no random split) | PRD Evaluation Framework |
-| A7 | Dashboard served locally (single-operator, no auth) | PRD §8 — Out of Scope |
-
-## Architecture Overview
-
-```
-┌─────────────────────────────────────────────────────────────────────┐
-│                      AGENT EXECUTION LAYER                          │
-│  Task 1 → Task 2 → Task 3 → Task 4 → Task 5 → Task 6 → ...       │
-└─────────────────────────────────────────────────────────────────────┘
-
-┌──────────┐   ┌──────────┐   ┌──────────┐   ┌──────────┐   ┌──────────┐
-│ Synthetic │→  │  Data    │→  │ Feature  │→  │ Physics  │→  │   ML     │
-│  Data Gen │   │Ingestion │   │  Engine  │   │  Layer   │   │  Model   │
-│  (Task 2) │   │ (Task 3) │   │ (Task 4) │   │ (Task 5) │   │ (Task 6) │
-└──────────┘   └──────────┘   └──────────┘   └──────────┘   └────┬─────┘
-                                                                  │
-                         ┌────────────────────────────────────────┘
-                         ▼
-                    ┌──────────┐   ┌──────────┐   ┌──────────┐
-                    │   API    │←──│ Explain  │   │Dashboard │
-                    │ (Task 8) │   │ (Task 7) │   │ (Task 9) │
-                    └────┬─────┘   └──────────┘   └──────────┘
-                         │
-                    ┌────▼─────┐
-                    │Integration│
-                    │ (Task 10) │
-                    └──────────┘
-```
-
-## Task Dependency Graph
-
-```
-Task 1 (Scaffolding) ───► all tasks
-      │
-      ▼
-Task 2 (Data Gen) ──────► Task 3 (Ingestion)
-                              │
-                              ▼
-                         Task 4 (Features)
-                              │
-                              ▼
-                         Task 5 (Physics)
-                              │
-                              ▼
-                         Task 6 (Models) ──► Task 7 (Explain)
-                              │                    │
-                              ▼                    │
-                         Task 8 (API) ◄────────────┘
-                              │
-                              ▼
-                         Task 9 (Dashboard)
-                              │
-                              ▼
-                         Task 10 (Integration)
-```
-
-## Technology Choices
-
-| Layer | Choice | Rationale |
-|-------|--------|-----------|
-| Data format | Parquet | Columnar, efficient for time-series |
-| Feature extraction | pandas + numpy + scipy | PRD stack |
-| ML baselines | scikit-learn | LogisticRegression + RandomForest |
-| Deep learning (future) | PyTorch | When we add Transformer |
-| Experiment tracking | MLflow | Model versioning, metric history |
-| API framework | FastAPI | Async, WebSocket support |
-| Dashboard | React + Recharts + shadcn/ui | PRD recommendation |
-| Synthetic data | Custom generator (numpy) | Need control over flare parameters |
-
-## File Map
-
-```
-FlareClassifier/
-├── CLAUDE.md                         # Project agent config
-├── MVP_PLAN.md                       # This file
-├── .claude/tasks/task-*.md           # Individual task instructions
-├── pyproject.toml                    # Python deps + project config
-├── requirements.txt                  # Pinned deps (generated from pyproject.toml)
-├── config/
-│   └── config.yaml                   # Pipeline parameters
-├── data/
-│   ├── raw/                          # Generated synthetic data
-│   ├── processed/                    # Cleaned, normalized data
-│   ├── windows/                      # Windowed training data
-│   └── external/                     # GOES catalogue (if available)
-├── src/
-│   ├── data_generation/
-│   │   └── synthetic_flare_generator.py
-│   ├── ingestion/
-│   │   ├── synchronizer.py
-│   │   ├── cleaner.py
-│   │   ├── normalizer.py
-│   │   └── windowing.py
-│   ├── features/
-│   │   ├── dynamics.py
-│   │   ├── cross_channel.py
-│   │   └── pipeline.py
-│   ├── physics/
-│   │   ├── stage_indicators.py
-│   │   ├── derived_ratios.py
-│   │   └── historical_context.py
-│   ├── models/
-│   │   ├── baselines.py
-│   │   └── evaluate.py
-│   ├── explainability/
-│   │   └── explainer.py
-│   ├── api/
-│   │   ├── __init__.py
-│   │   ├── server.py
-│   │   ├── schemas.py
-│   │   └── inference.py
-│   └── dashboard/
-│       ├── package.json
-│       ├── vite.config.ts
-│       ├── tsconfig.json
-│       ├── index.html
-│       └── src/
-│           ├── main.tsx
-│           ├── App.tsx
-│           ├── components/
-│           │   ├── TimeSeriesPlot.tsx
-│           │   ├── ProbabilityGauge.tsx
-│           │   ├── StateIndicator.tsx
-│           │   ├── ShapChart.tsx
-│           │   └── ExplanationCard.tsx
-│           └── api/
-│               └── websocket.ts
-├── tests/
-│   ├── test_synthetic_data.py
-│   ├── test_ingestion.py
-│   ├── test_features.py
-│   ├── test_physics.py
-│   ├── test_models.py
-│   ├── test_explainability.py
-│   └── test_api.py
-└── notebooks/
-    ├── 01_data_exploration.ipynb
-    ├── 02_feature_analysis.ipynb
-    └── 03_model_evaluation.ipynb
-```
-
-## Decision Log
-
+## Decision Log (deviations from docs/, with rationale)
 | Decision | Alternative | Rationale |
-|----------|-------------|-----------|
-| Synthetic data first | Wait for real data | Unblocks all development |
-| Classical baselines (LR+RF) | Transformer/Deep Learning | PRD requirement; faster iteration |
-| FastAPI + WebSocket | REST-only | Real-time dashboard requirement |
-| Rolling z-score norm | Min-max or global norm | PRD 3.1.3 requirement |
-| 20-min windows, 10s stride | Other sizes | PRD 3.1.4 requirement |
-| Temporal split | Random split | PRD: no future leakage |
-| Parquet storage | CSV/HDF5 | PRD recommendation + performance |
+|---|---|---|
+| Hybrid stride: features 10s, DL raw windows 60s | 10s everywhere | 180d@1Hz with 10s-stride raw windows ≈ 30 TB — infeasible; 60s ≈ GBs. Feature/label semantics preserved (labels still derived from 10s future windows) |
+| 30-day held-out test period | 6 months | 6-month test set on a 6-month+ dataset leaves no training data; 30 days on 180 days gives 5:1 train:test — accepted deviation, documented |
+| File registry | MLflow/W&B | Single-operator deployment; zero new heavy deps; spec's *behavior* (versioning, never overwrite, promotion gate) preserved |
+| Browser push via WebSocket events | VAPID Web Push | No push server/keys needed; single-operator; VAPID noted as stretch |
+| L4/L5 computed on DL-window cadence arrays | per-10s-row streaming | Frequency/changepoint features need long uniform windows; cost otherwise prohibitive |
+| BOCPD implemented in numpy | full BOCPD lib | Small surface; avoids unmaintained deps |
+
+## Task Order (dependencies enforced)
+```
+Task 11 (data scale + hybrid windowing + temporal split)
+  → Task 12 (L4 frequency features)
+  → Task 13 (L5 changepoint features)
+  → Task 14 (LSTM baseline)
+  → Task 15 (Dual-Stream Transformer)
+  → Task 16 (HMM state machine → API payload)
+  → Task 17 (model-based lead time + CI; alert channels; payload compliance)
+  → Task 18 (SQLite history + hindcast/CSV + registry + promotion gate + shadow + drift)
+  → Task 19 (dashboard: real data, attention heatmap, countdown, history view)
+  → Task 20 (E2E pipeline + verify script + README + final verification)
+```
+Tasks 12/13 can parallelize after 11; 14 after 11+13; 15 after 14; 16 after 15; 17 after 15+16; 18 after 17; 19 after 15–18; 20 last.
 
 ## Execution Guide
-
-The agent should execute tasks in order. After each task:
-
-1. Verify all acceptance criteria pass
-2. Run the task's test suite
-3. Mark the task as complete before proceeding
-4. If a task fails, fix it before moving to the next
+- Execute tasks in numeric order; after each: run task tests + `pytest tests/`, fix failures before proceeding.
+- New deps: `torch` (CPU), `hmmlearn`. Everything else already present (`pywavelets`, `ruptures` are in requirements).
+- Final verification per CLAUDE.md: models exist, `models/evaluation_results.json` complete, `data/windows/X_soft.npy` shape correct, full test suite green.

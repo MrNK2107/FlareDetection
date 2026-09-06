@@ -1,0 +1,68 @@
+EVALUATION FRAMEWORK
+Aditya-L1 Solar Flare Forecasting System
+==========================================
+
+
+1. TRAIN/TEST SPLIT
+
+  All models must be evaluated on a held-out test set covering at least one
+  6-month period not seen during training.
+
+  CRITICAL: Use temporal split - never random split (which leaks future data
+  into training).
+
+
+2. PRIMARY METRICS
+
+  +----------------------------+-----------+--------------------------------------------+--------------------------------------------+
+  | Metric                     | Target    | Reasoning                                   | Failure Mode to Avoid                      |
+  +----------------------------+-----------+--------------------------------------------+--------------------------------------------+
+  | True Skill Statistic (TSS) | > 0.6     | Accounts for imbalance. Standard in solar   | Optimizing accuracy instead - TSS is ~0    |
+  |                            |           | forecasting literature.                     | for always-quiet predictions.              |
+  +----------------------------+-----------+--------------------------------------------+--------------------------------------------+
+  | Probability Calibration    | < 0.08    | Ensures probability outputs are physically  | Overconfident predictions that degrade     |
+  | (Brier Score)              |           | meaningful.                                 | operator trust.                            |
+  +----------------------------+-----------+--------------------------------------------+--------------------------------------------+
+  | Lead Time Error (MAE)      | < 5 min   | Operational value depends on useful lead    | Predicting flares after onset has no       |
+  |                            | for M+X   | time.                                       | operational value.                         |
+  +----------------------------+-----------+--------------------------------------------+--------------------------------------------+
+  | False Alarm Rate (FAR)     | < 25%     | High FAR causes operator alarm fatigue.     | Maximizing recall while ignoring           |
+  |                            |           |                                            | precision.                                 |
+  +----------------------------+-----------+--------------------------------------------+--------------------------------------------+
+  | Detection Rate             | > 80%     | Missing major flares is the primary         | Tuning threshold only on C-class events.   |
+  | (M+X flares)               |           | operational risk.                           |                                            |
+  +----------------------------+-----------+--------------------------------------------+--------------------------------------------+
+
+
+3. EVALUATION RULE
+
+  Never report accuracy as a primary metric. The baseline accuracy of
+  predicting 'no flare' at all times exceeds 95% due to class imbalance.
+
+  Use TSS and Brier Score as PRIMARY METRICS in all experiment logs and model
+  comparison reports.
+
+
+4. INFERENCE OUTPUT SPECIFICATION (PHASE 5)
+
+  The model must not output a binary prediction. Every inference call must
+  return the following structured payload:
+
+  +----------------------------+-------------+--------------------------------------------------+
+  | Field                      | Type        | Description                                      |
+  +----------------------------+-------------+--------------------------------------------------+
+  | flare_probability          | float [0,1] | Probability of any flare (>=B class) in next     |
+  |                            |             | 30 minutes.                                      |
+  | severity_probs             | dict        | Per-class probabilities {B, C, M, X}. Must sum   |
+  |                            | {B,C,M,X}   | to <= 1.                                         |
+  | expected_lead_time_min     | float       | Expected minutes until flare peak. Null if       |
+  |                            |             | flare_probability < 0.3.                         |
+  | lead_time_ci_90            | [float,     | 90% confidence interval on lead time estimate.   |
+  |                            |  float]     |                                                   |
+  | solar_state                | str         | Current inferred state label (e.g., 'Precursor').|
+  | state_transition_probs     | dict        | P(next_state | current_state) for all 6 states.   |
+  | dominant_feature           | str         | Human-readable name of top SHAP feature.         |
+  | explanation_text           | str         | Auto-generated natural language reason string.   |
+  | model_uncertainty          | float       | Epistemic uncertainty estimate (MC Dropout std). |
+  | inference_timestamp_utc    | datetime    | UTC timestamp of when inference was run.         |
+  +----------------------------+-------------+--------------------------------------------------+

@@ -1,0 +1,61 @@
+EXPLAINABILITY DESIGN - PHASE 6
+Aditya-L1 Solar Flare Forecasting System
+==========================================
+
+Explainability is a hard requirement, not a nice-to-have. Scientists will not
+operationally trust a system that cannot explain its predictions. All three
+mechanisms must be implemented.
+
+
+1. SHAP FOR FEATURE ATTRIBUTION
+
+  Tool:
+    shap.DeepExplainer or shap.GradientExplainer for the Transformer model.
+
+  Requirements:
+    - Compute SHAP values for every inference call.
+    - Cache SHAP values for dashboard rendering.
+    - Surface top-3 contributing features with:
+        * Feature name (human-readable)
+        * Direction (increasing/decreasing effect on prediction)
+        * Magnitude (SHAP value)
+
+  For classical baselines (Logistic Regression, Random Forest), use
+  shap.TreeExplainer or shap.LinearExplainer instead.
+
+
+2. ATTENTION VISUALIZATION
+
+  Mechanism:
+    Store cross-attention weights from the fusion layer on every forward pass.
+
+  Dashboard Rendering:
+    - Render attention as a heatmap overlaid on the 20-minute input window.
+    - Dual-channel layout: soft X-ray on top, hard X-ray on bottom.
+    - Highlight time steps where attention weight > 0.1 as 'driver windows'.
+
+  Data Pipeline:
+    Attention weights must be serialized as part of the inference payload and
+    served to the dashboard via WebSocket.
+
+
+3. AUTO-GENERATED EXPLANATION TEXT
+
+  CRITICAL: Use a template engine (not another LLM call) to produce
+  explanation_text from structured SHAP + attention outputs.
+
+  Example output:
+    "Prediction driven by rapid soft X-ray rise over the past 6 minutes
+    (SHAP rank 1) combined with emerging hard X-ray acceleration (attention
+    peak at T-3 min). Cross-channel lag narrowed from 90s to 12s in the
+    last window."
+
+  Rules:
+    - All template variables must be traced to specific computed features.
+    - No hallucinated reasons.
+    - Templates must cover at minimum the following scenarios:
+        * Precursor detected (soft_rising + low hard_flux)
+        * Active flare (high probability across both channels)
+        * Quiet period (all indicators below threshold)
+        * Post-flare decay (descending flux, widening lag)
+        * Uncertainty high (model_uncertainty > 0.3)
