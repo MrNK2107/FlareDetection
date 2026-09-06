@@ -5,8 +5,8 @@ import asyncio
 import json
 import os
 from contextlib import asynccontextmanager
-from datetime import datetime
-from typing import Set
+from datetime import datetime, timezone
+from typing import Optional, Set
 
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
@@ -23,16 +23,27 @@ alert_manager: AlertManager = None
 history: InferenceHistory = None
 streamer = None
 broadcast_task = None
+loop: Optional[asyncio.AbstractEventLoop] = None
 connected_ws: Set[WebSocket] = set()
 TICK_SECONDS = 10.0
 
 
 def _broadcast(message_json: str) -> None:
-    for ws in list(connected_ws):
-        try:
-            asyncio.get_running_loop().create_task(ws.send_text(message_json))
-        except Exception:
-            pass
+    """Thread-safe broadcast: _run_tick executes in a worker thread (via
+    asyncio.to_thread), so schedule the coroutine onto the captured event loop
+    instead of calling get_running_loop() from the wrong thread (which raised
+    RuntimeError and silently dropped every message)."""
+    if loop is None or loop.is_closed():
+        return
+
+    async def _send_all():
+        for ws in list(connected_ws):
+            try:
+                await ws.send_text(message_json)
+            except Exception:
+                connected_ws.discard(ws)
+
+    asyncio.run_coroutine_threadsafe(_send_all(), loop)
 
 
 def _broadcast_alert(payload_json: dict) -> None:
@@ -63,7 +74,9 @@ def _run_tick() -> None:
         if shadow_engine is not None:
             try:
                 shadow_result = shadow_engine.predict(input_data)
-                shadow_result.model_version = "shadow"
+                # Tagged so shadow rows are distinguishable in history and
+                # never confused with served production predictions.
+                shadow_result.model_version = f"shadow:{shadow_result.model_version}"
                 shadow_result.inference_timestamp_utc = result.inference_timestamp_utc
                 history.insert_prediction(shadow_result)
             except Exception:
@@ -89,7 +102,8 @@ async def _broadcast_loop() -> None:
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    global inference_engine, shadow_engine, alert_manager, history, streamer, broadcast_task
+    global inference_engine, shadow_engine, alert_manager, history, streamer, broadcast_task, loop
+    loop = asyncio.get_running_loop()
     history = InferenceHistory()
     try:
         inference_engine = InferenceEngine()
@@ -123,6 +137,7 @@ async def lifespan(app: FastAPI):
     yield
     if broadcast_task is not None:
         broadcast_task.cancel()
+    loop = None
     connected_ws.clear()
 
 
@@ -149,7 +164,7 @@ async def health():
         "model_loaded": inference_engine is not None,
         "shadow_loaded": shadow_engine is not None,
         "streamer_loaded": streamer is not None,
-        "timestamp": datetime.utcnow().isoformat(),
+        "timestamp": datetime.now(timezone.utc).isoformat(),
     }
 
 
@@ -165,7 +180,7 @@ async def predict(input_data: PredictionInput):
     if shadow_engine is not None:
         try:
             shadow_result = shadow_engine.predict(input_data)
-            shadow_result.model_version = "shadow"
+            shadow_result.model_version = f"shadow:{shadow_result.model_version}"
             shadow_result.inference_timestamp_utc = result.inference_timestamp_utc
             history.insert_prediction(shadow_result)
         except Exception as e:

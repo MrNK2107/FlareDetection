@@ -4,7 +4,7 @@ browser (WebSocket push via registered callback)."""
 import json
 import smtplib
 import urllib.request
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from email.mime.text import MIMEText
 from typing import Callable, List, Optional
 
@@ -141,7 +141,7 @@ class AlertManager:
         return True
 
     def evaluate_and_alert(self, prediction: PredictionOutput) -> Optional[AlertPayload]:
-        now = prediction.inference_timestamp_utc or datetime.utcnow()
+        now = prediction.inference_timestamp_utc or datetime.now(timezone.utc)
         if self.should_alert(prediction.flare_probability, now):
             self.last_alert_time = now
             payload = AlertPayload(

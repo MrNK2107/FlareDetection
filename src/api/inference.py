@@ -2,7 +2,7 @@ import json
 import joblib
 import numpy as np
 import torch
-from datetime import datetime
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Dict, List, Optional, Tuple
 
@@ -95,6 +95,20 @@ class InferenceEngine:
         return explanation, text
 
     @staticmethod
+    def _top_features_payload(explanation: Dict) -> List[Dict]:
+        """Serialize top SHAP features for the dashboard explainability panel
+        (docs/07 §3); rounded for compact WS transport."""
+        return [
+            {
+                'name': f['name'],
+                'value': round(float(f['value']), 6),
+                'shap': round(float(f['shap']), 6),
+                'direction': f['direction'],
+            }
+            for f in explanation.get('top_features', [])
+        ]
+
+    @staticmethod
     def _severity_dict(sev_probs: np.ndarray) -> Dict[str, float]:
         return {cls: round(float(p), 6) for cls, p in zip(SEVERITY_CLASSES, sev_probs)}
 
@@ -120,7 +134,7 @@ class InferenceEngine:
         if out.flare_probability < 0.3:
             out.expected_lead_time_min = None
             out.lead_time_ci_90 = None
-        out.inference_timestamp_utc = datetime.utcnow()
+        out.inference_timestamp_utc = datetime.now(timezone.utc)
         return out
 
     # ------------------------------------------------------------- classical
@@ -153,6 +167,7 @@ class InferenceEngine:
             explanation_text=text,
             model_uncertainty=round(uncertainty, 4),
             attention_weights=None,
+            top_features=self._top_features_payload(explanation),
             model_version="baseline-rf",
         )
 
@@ -219,6 +234,13 @@ class InferenceEngine:
 
         explanation, text = self._explain(eng.reshape(1, -1), prob_flare, uncertainty)
         state, trans = self._infer_state(eng, input_data.feature_names)
+        # Downsample attention over the soft timeline to <=64 points for WS
+        # transport (raw T=1200 per tick is wasteful; shape is preserved).
+        attention_payload = None
+        if attn_vec is not None:
+            n_attn = len(attn_vec)
+            step = max(1, n_attn // 64)
+            attention_payload = [round(float(a), 6) for a in attn_vec[::step][:64]]
         return PredictionOutput(
             flare_probability=round(prob_flare, 4),
             severity_probs=self._severity_dict(severity),
@@ -229,6 +251,7 @@ class InferenceEngine:
             dominant_feature=explanation['dominant_feature'],
             explanation_text=text,
             model_uncertainty=round(uncertainty, 4),
-            attention_weights=[round(float(a), 6) for a in attn_vec] if attn_vec is not None else None,
+            attention_weights=attention_payload,
+            top_features=self._top_features_payload(explanation),
             model_version="transformer-v1",
         )

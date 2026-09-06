@@ -3,13 +3,28 @@ alerts, powering the hindcast overlay and CSV export endpoints."""
 import json
 import sqlite3
 import threading
-from datetime import datetime
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import List, Optional
 
 import pandas as pd
 
 from src.api.schemas import AlertPayload, PredictionOutput
+
+
+def _normalize_ts(value: Optional[str]) -> Optional[str]:
+    """Normalize a query bound to tz-aware UTC isoformat so SQLite string
+    comparisons match stored timestamps (naive '...T12:00:00' vs '...Z' vs
+    '...+00:00' would otherwise compare inconsistently)."""
+    if value is None:
+        return None
+    try:
+        dt = datetime.fromisoformat(value.replace('Z', '+00:00'))
+        if dt.tzinfo is None:
+            dt = dt.replace(tzinfo=timezone.utc)
+        return dt.astimezone(timezone.utc).isoformat()
+    except ValueError:
+        return value
 
 _SCHEMA = """
 CREATE TABLE IF NOT EXISTS predictions (
@@ -87,10 +102,10 @@ class InferenceHistory:
         conditions, params = [], []
         if start:
             conditions.append("ts_utc >= ?")
-            params.append(start)
+            params.append(_normalize_ts(start))
         if end:
             conditions.append("ts_utc <= ?")
-            params.append(end)
+            params.append(_normalize_ts(end))
         if conditions:
             query += " WHERE " + " AND ".join(conditions)
         query += " ORDER BY ts_utc"
@@ -101,10 +116,10 @@ class InferenceHistory:
         conditions, params = [], []
         if start:
             conditions.append("ts_utc >= ?")
-            params.append(start)
+            params.append(_normalize_ts(start))
         if end:
             conditions.append("ts_utc <= ?")
-            params.append(end)
+            params.append(_normalize_ts(end))
         if conditions:
             query += " WHERE " + " AND ".join(conditions)
         query += " ORDER BY ts_utc"

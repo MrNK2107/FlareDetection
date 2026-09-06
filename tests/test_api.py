@@ -186,6 +186,11 @@ def test_engine_payload_spec_compliance():
     assert isinstance(out.explanation_text, str) and out.explanation_text
     assert out.model_uncertainty >= 0
     assert out.inference_timestamp_utc is not None
+    # docs/07 §3: top SHAP features serialized for the dashboard panel
+    assert out.top_features is not None and len(out.top_features) > 0
+    assert all(set(f.keys()) >= {'name', 'value', 'shap', 'direction'} for f in out.top_features)
+    # timestamps must be timezone-aware UTC
+    assert out.inference_timestamp_utc.tzinfo is not None
 
 
 @pytest.mark.skipif(not MODELS_READY, reason="trained RF artifacts not present")
@@ -198,6 +203,57 @@ def test_engine_rejects_wrong_feature_count():
 
 
 STREAMING_READY = Path('data/processed/synchronized_clean.parquet').exists()
+
+
+def test_broadcast_schedules_onto_event_loop():
+    """Regression: _broadcast used asyncio.get_running_loop() from a worker
+    thread (asyncio.to_thread), which raised RuntimeError and silently dropped
+    every WS message. It must schedule onto the captured main loop instead."""
+    import asyncio
+    import threading
+    import src.api.server as server_mod
+
+    async def scenario():
+        received = []
+
+        class FakeWS:
+            async def send_text(self, text):
+                received.append(text)
+
+        ws = FakeWS()
+        server_mod.connected_ws.add(ws)
+        server_mod.loop = asyncio.get_running_loop()
+        try:
+            # simulate the worker-thread tick calling _broadcast
+            t = threading.Thread(
+                target=server_mod._broadcast,
+                args=(json.dumps({"type": "telemetry", "points": []}),),
+            )
+            t.start()
+            t.join(timeout=5)
+            await asyncio.sleep(0.2)  # let the scheduled coroutine run
+        finally:
+            server_mod.connected_ws.discard(ws)
+            server_mod.loop = None
+        assert received, "broadcast from worker thread delivered nothing"
+        assert json.loads(received[0])["type"] == "telemetry"
+
+    asyncio.run(scenario())
+
+
+def test_history_query_normalizes_tz_bounds(tmp_path):
+    """Naive start/end strings must be interpreted as UTC so SQLite string
+    comparisons are consistent with the stored tz-aware isoformat rows."""
+    from src.api.history import InferenceHistory
+    db = InferenceHistory(db_path=str(tmp_path / "h.db"))
+    out = PredictionOutput(flare_probability=0.9)
+    db.insert_prediction(out)
+    # naive bound far in the future must exclude the row (no crash / no match)
+    df = db.query_predictions(start="2999-01-01T00:00:00")
+    assert len(df) == 0
+    # Z-suffixed and +00:00 bounds must both match
+    assert len(db.query_predictions(start="2000-01-01T00:00:00Z")) == 1
+    assert len(db.query_predictions(start="2000-01-01T00:00:00+00:00")) == 1
 
 
 @pytest.mark.skipif(not STREAMING_READY, reason="synchronized telemetry not present")
