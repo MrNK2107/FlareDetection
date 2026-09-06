@@ -36,7 +36,8 @@ src/dashboard/        → React + Recharts frontend
 ## Verification
 
 After pipeline run:
+- `python scripts/verify.py` passes (artifacts, metric completeness, payload spec, registry)
 - `models/random_forest.pkl` exists
-- `models/evaluation_results.json` has metrics
-- `data/windows/X_soft.npy` has correct shape
+- `models/evaluation_results.json` has all model metrics (LogisticRegression, RandomForest, LSTM, Transformer)
+- `data/windows/X_soft.npy` has correct shape (with `dl_window_metadata.parquet` alongside)
 - `python -m pytest tests/ -v` passes
