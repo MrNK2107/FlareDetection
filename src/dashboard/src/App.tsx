@@ -66,14 +66,16 @@ export default function App() {
       case 'prediction': {
         const pred = msg as unknown as PredictionOutput
         setPrediction(pred)
-        const top = (pred as any).top_features
+        const top = (pred as { top_features?: Array<{ name: string; value: number; shap: number }> }).top_features
         if (Array.isArray(top) && top.length > 0) {
-          setShapFeatures(top.map((f: any) => ({
+          setShapFeatures(top.map((f) => ({
             name: f.name,
             value: f.value,
             shap: f.shap,
-            direction: f.shap >= 0 ? 'increasing' : 'decreasing',
+            direction: f.shap >= 0 ? ('increasing' as const) : ('decreasing' as const),
           })))
+        } else {
+          setShapFeatures([])
         }
         break
       }

@@ -17,6 +17,7 @@ export interface PredictionOutput {
   model_uncertainty: number
   inference_timestamp_utc: string
   attention_weights?: number[] | null
+  top_features?: Array<{ name: string; value: number; shap: number; direction: string }> | null
   model_version?: string
 }
 
