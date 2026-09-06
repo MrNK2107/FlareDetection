@@ -32,20 +32,26 @@ def evaluate_model(
     y_pred = model.predict(X_test_scaled)
     y_proba = model.predict_proba(X_test_scaled)
     y_binary = (y_test > 0).astype(int)
-    y_pred_binary = (y_pred > 0).astype(int)
+    # Binarize the model's class predictions the same way as the labels:
+    # any positive flare class (1..4) counts as a detection. Do NOT derive the
+    # binary prediction from the raw integer argmax label (e.g. class 'B' = 1
+    # would look like a negative under (pred > 0) confusion-matrix arithmetic).
+    y_pred_binary = (np.asarray(y_pred) > 0).astype(int)
     has_positive = y_binary.sum() > 0
-    cm = confusion_matrix(y_binary, y_pred_binary) if len(np.unique(y_binary)) > 1 else None
-    if cm is not None and cm.size == 4:
+    cm = confusion_matrix(y_binary, y_pred_binary, labels=[0, 1])
+    if has_positive and cm.size == 4:
         tn, fp, fn, tp = cm.ravel()
         tpr = tp / (tp + fn) if (tp + fn) > 0 else 0.0
         fpr = fp / (fp + tn) if (fp + tn) > 0 else 0.0
         tss = tpr - fpr
         detection_rate = tpr
-        false_alarm_rate = fp / (fp + tn) if (fp + tn) > 0 else 0.0
+        false_alarm_rate = fpr
     else:
+        # No positive test windows: detection undefined -> report 0 honestly.
+        tn, fp, _, _ = cm.ravel()
         tss = 0.0
         detection_rate = 0.0
-        false_alarm_rate = 0.0
+        false_alarm_rate = fp / (fp + tn) if (fp + tn) > 0 else 0.0
     if y_proba.shape[1] >= 2 and has_positive:
         # P(flare) = sum of positive-class probabilities (classes 1..4);
         # for binary models this equals y_proba[:, 1]

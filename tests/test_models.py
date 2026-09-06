@@ -73,6 +73,38 @@ def test_majority_class_baseline():
     assert results['tss'] is not None
 
 
+def test_evaluate_multiclass_predictions_binarized_correctly():
+    """Regression: a 5-class RF predicting flare class 'B' (label 1) for a
+    window with true class 'C' (label 2) must count as a detection, and the
+    confusion matrix must always be built from BINARY labels (not the raw
+    multi-class argmax, which previously collapsed to a bogus 2x5 cm and
+    returned TSS=0 / detection=0 for real models)."""
+    rng = np.random.default_rng(7)
+    n = 300
+    X = rng.standard_normal((n, 6))
+    # 4-class problem: 0=quiet, 1..3 = flare classes
+    y = rng.integers(0, 4, size=n)
+    X += np.eye(6)[y] * 2.0  # separable via one-hot rows
+    model = train_random_forest(X, y)
+    results = evaluate_model(model, X, y, "RF-multiclass")
+    # A separable problem must yield near-perfect binary detection, not 0.
+    assert results['detection_rate'] > 0.9, results
+    assert results['tss'] > 0.9, results
+    assert results['false_alarm_rate'] < 0.1, results
+
+
+def test_evaluate_no_positive_test_windows_is_honest():
+    """With zero positive test windows, detection_rate must be 0 (undefined),
+    not silently derived from a degenerate confusion matrix."""
+    rng = np.random.default_rng(3)
+    X = rng.standard_normal((100, 4))
+    y = np.zeros(100, dtype=int)
+    model = train_random_forest(X, y)
+    results = evaluate_model(model, X, y, "RF-quiet")
+    assert results['detection_rate'] == 0.0
+    assert results['tss'] == 0.0
+
+
 def test_model_save_load(sample_data, tmp_path):
     import joblib
     X, y = sample_data
