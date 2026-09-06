@@ -173,7 +173,9 @@ class StateMachineInference:
         current state, and return (state_name, P(next_state | current))."""
         lookup = {n: v for n, v in zip(feature_names, np.asarray(features).ravel())}
         vec = np.array([lookup.get(c, 0.0) for c in self.feature_cols], dtype=np.float64)
-        X = ((vec - self.mean) / self.std).reshape(1, -1)
+        mean = np.asarray(self.mean)
+        std = np.asarray(self.std)
+        X = ((vec - mean) / std).reshape(1, -1)
         state = int(self.model.predict(X)[0])
         trans_row = self.model.transmat_[state]
         transition_probs = {self.state_name_map[int(j)]: float(trans_row[j]) for j in range(len(trans_row))}

@@ -128,11 +128,16 @@ def test_temporal_split_orders_correctly(tmp_path):
 
 
 def test_temporal_split_empty_side_raises(tmp_path):
-    root = _write_split_fixtures(tmp_path)
+    import pandas as pd
+    root = tmp_path / "empty"
+    root.mkdir()
+    ts = pd.DatetimeIndex([pd.Timestamp("2026-01-01")] * 10)
+    meta = pd.DataFrame({"window_start": ts, "label_code": [0] * 10, "label": ["None"] * 10})
+    feats = pd.DataFrame(np.random.randn(10, 4), columns=[f"f{i}" for i in range(4)])
+    meta.to_parquet(root / "window_metadata.parquet", index=False)
+    feats.to_parquet(root / "full_feature_matrix.parquet", index=False)
     with pytest.raises(ValueError):
-        prepare_training_data(
-            window_dir=str(root), processed_dir=str(root), test_days=500.0
-        )
+        prepare_training_data(window_dir=str(root), processed_dir=str(root), test_days=30.0)
 
 
 # --------------------------- LSTM baseline ---------------------------

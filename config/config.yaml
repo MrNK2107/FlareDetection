@@ -1,105 +1,107 @@
-data:
-  raw_dir: "data/raw"
-  processed_dir: "data/processed"
-  windows_dir: "data/windows"
-  external_dir: "data/external"
-
-ingestion:
-  target_frequency_hz: 1.0
-  gap_threshold_s: 5
-  z_score_window_h: 6
-  window_length_s: 1200
-  window_stride_s: 10
-  forecast_horizon_s: 1800
-  # Stride for candidate feature-extraction windows. Full-spec 10s over 180d
-  # is ~1.5M windows; 60s keeps extraction tractable while labels below are
-  # still computed at the spec's 10s stride (see MVP_PLAN.md decision log).
-  feature_stride_s: 60
-  # Hybrid stride (see MVP_PLAN.md decision log):
-  # raw windows for DL models use a coarser stride + internal decimation
-  dl_window_stride_s: 120
-  dl_internal_cadence_s: 10
-  dl_dtype: float32
-
-synthetic_data:
-  total_days: 180
-  seed: 42
-  chunk_days: 15
-  quiet_baseline_soft: 1.0e-7
-  quiet_baseline_hard: 1.0e-8
-  noise_std_soft: 1.0e-9
-  noise_std_hard: 1.0e-10
-  dropout_prob: 0.001
-  events_per_day:
-    B: 0.30
-    C: 0.20
-    M: 0.10
-    X: 0.03
-
-features:
-  layers: [L1, L2, L3, L4, L5]
-  rolling_windows_s: [60, 300]
-  batch_size: 2000
-
-models:
-  random_forest:
-    n_estimators: 200
-    max_depth: 15
-    class_weight: "balanced"
-  logistic_regression:
-    class_weight: "balanced"
-    max_iter: 1000
-  lstm:
-    hidden_size: 128
-    num_layers: 2
-    dropout: 0.2
-    epochs: 8
-    batch_size: 256
-    lr: 0.001
-    max_train_windows: 60000
-  transformer:
-    d_model: 128
-    nhead: 4
-    num_layers: 2
-    conv_kernels: [3, 7, 15]
-    fusion_dim: 256
-    dropout: 0.1
-    epochs: 6
-    batch_size: 128
-    lr: 0.0005
-    focal_gamma: 2.0
-    focal_alpha: 0.75
-    loss_weights: [0.5, 0.3, 0.2]
-    mc_dropout_samples: 20
-    max_train_windows: 60000
-  hmm:
-    n_states: 6
-    n_iter: 50
-    n_init: 3
-
-evaluation:
-  test_days: 30
-  quiet_subsample_ratio: 4
-  tss_threshold: 0.6
-  brier_threshold: 0.08
-  false_alarm_threshold: 0.25
-  detection_rate_threshold: 0.8
-  lead_time_mae_threshold_min: 5.0
-
 alerting:
-  threshold: 0.5
-  quiet_window_minutes: 15
   channels:
-    email:
-      enabled: false
-      smtp_host: ""
-      smtp_port: 587
-      username: ""
-      password: ""
-      from_addr: ""
-      to_addrs: []
-    webhook:
-      enabled: false
-      url: ""
     browser:
       enabled: true
+    email:
+      enabled: false
+      from_addr: ''
+      password: ''
+      smtp_host: ''
+      smtp_port: 587
+      to_addrs: []
+      username: ''
+    webhook:
+      enabled: false
+      url: ''
+  quiet_window_minutes: 15
+  threshold: 0.5
+data:
+  external_dir: data/external
+  processed_dir: data/processed
+  raw_dir: data/raw
+  windows_dir: data/windows
+evaluation:
+  brier_threshold: 0.08
+  detection_rate_threshold: 0.8
+  false_alarm_threshold: 0.25
+  lead_time_mae_threshold_min: 5.0
+  quiet_subsample_ratio: 4
+  test_days: 30
+  tss_threshold: 0.6
+features:
+  batch_size: 2000
+  layers:
+  - L1
+  - L2
+  - L3
+  - L4
+  - L5
+  rolling_windows_s:
+  - 60
+  - 300
+ingestion:
+  dl_dtype: float32
+  dl_internal_cadence_s: 10
+  dl_window_stride_s: 120
+  feature_stride_s: 60
+  forecast_horizon_s: 1800
+  gap_threshold_s: 5
+  target_frequency_hz: 1.0
+  window_length_s: 1200
+  window_stride_s: 10
+  z_score_window_h: 6
+models:
+  hmm:
+    n_init: 3
+    n_iter: 50
+    n_states: 6
+  logistic_regression:
+    class_weight: balanced
+    max_iter: 1000
+  lstm:
+    batch_size: 256
+    dropout: 0.2
+    epochs: 8
+    hidden_size: 128
+    lr: 0.001
+    max_train_windows: 60000
+    num_layers: 2
+  random_forest:
+    class_weight: balanced
+    max_depth: 15
+    n_estimators: 200
+  transformer:
+    batch_size: 128
+    conv_kernels:
+    - 3
+    - 7
+    - 15
+    d_model: 128
+    dropout: 0.1
+    epochs: 6
+    focal_alpha: 0.75
+    focal_gamma: 2.0
+    fusion_dim: 256
+    loss_weights:
+    - 0.5
+    - 0.3
+    - 0.2
+    lr: 0.0005
+    max_train_windows: 60000
+    mc_dropout_samples: 20
+    nhead: 4
+    num_layers: 2
+synthetic_data:
+  chunk_days: 15
+  dropout_prob: 0.001
+  events_per_day:
+    B: 0.3
+    C: 0.2
+    M: 0.1
+    X: 0.03
+  noise_std_hard: 1.0e-10
+  noise_std_soft: 1.0e-09
+  quiet_baseline_hard: 1.0e-08
+  quiet_baseline_soft: 1.0e-07
+  seed: 42
+  total_days: 180

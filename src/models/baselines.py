@@ -22,9 +22,8 @@ def train_logistic_regression(
         'random_state': random_state,
         'n_jobs': -1,
     }
-    kwargs.pop('n_jobs', None)
     if n_unique > 2:
-        model = LogisticRegression(multi_class='multinomial', **kwargs)
+        model = LogisticRegression(**kwargs)
     else:
         model = LogisticRegression(**kwargs)
     model.fit(X_scaled, y_train)
